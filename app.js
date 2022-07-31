@@ -62,6 +62,7 @@ const userSchema = new mongoose.Schema({
     password:String,
     googleId:String,  //google
     facebookId:String,  //facebook
+    secret: String,
     });
 
 // -----------------------------PLUGIN TO SCHEMA LEVEL -5---------------------------------//
@@ -201,6 +202,8 @@ app.post("/login", function(req,res){
     })
 });
 
+
+
 // -----------------------------GET LOGOUT ROUTE---------------------------------//
 
 app.get("/logout", function(req, res){
@@ -219,11 +222,57 @@ app.get("/logout", function(req, res){
 
 app.get("/secrets", function(req, res){
     res.set("Cache-control", 'no-cache,private, no-store, must-validate, max-stale=0, post-check=0' );
+    User.find({"secret":{$ne:null}}, function(err, foundUsers){
+        if (err){
+            console.log(err);
+        } else{
+            if (foundUsers && req.isAuthenticated()){
+
+                res.render("secrets", {usersWithSecrets : foundUsers})
+            }
+            else {
+                res.redirect("/login");
+            }
+        }
+    })
+    
+    // 
+    // if (req.isAuthenticated()){
+    //     res.render("secrets");
+    // } else {
+    //     res.redirect("/login");
+    // }
+
+});
+
+// ---------------------------- GET SUBMIT ROUTE ---------------------------------//
+
+app.get("/submit", function(req,res){
+    res.set("Cache-control", 'no-cache,private, no-store, must-validate, max-stale=0, post-check=0' );
     if (req.isAuthenticated()){
-        res.render("secrets");
+        res.render("submit");
     } else {
         res.redirect("/login");
-    }
+    } 
+});
+                    
+// ----------------------------- POST SUBMIT ROUTE ---------------------------------//
+
+app.post("/submit", function(req,res){
+    const submittedSecret = req.body.secret;
+    console.log(req.user);
+    User.findById(req.user.id, function(err, foundUser){
+        if (err){
+            console.log(err)
+        } else {
+            if (foundUser){
+                foundUser.secret = submittedSecret;
+                foundUser.save(function(){
+                    res.redirect("/secrets")
+                });
+            }
+        }
+    });
 });
 
 // ----------------------------- GET REGISTER ROUTE ---------------------------------//
