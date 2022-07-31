@@ -6,6 +6,9 @@ const mongoose = require('mongoose');
 const session = require('express-session');
 const passport =require('passport');
 const passportLocalMongoose = require('passport-local-mongoose');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;  //Google strategy
+const findOrCreate = require('mongoose-findorcreate');
+const FacebookStrategy =require('passport-facebook').Strategy;  //FAcebook strategy
 
 // const bcrypt = require('bcrypt'); // FOR LEVEL -4 SALTING 
 // const saltRounds = 10;
@@ -56,12 +59,15 @@ mongoose.connect("mongodb://localhost:27017/userDB", {useNewUrlParser :true});
 
 const userSchema = new mongoose.Schema({
     email:String,
-    password:String
-});
+    password:String,
+    googleId:String,  //google
+    facebookId:String,  //facebook
+    });
 
 // -----------------------------PLUGIN TO SCHEMA LEVEL -5---------------------------------//
 
-userSchema.plugin(passportLocalMongoose);       
+userSchema.plugin(passportLocalMongoose);       // to work with passportLocalMongoose mongoose plugin
+userSchema.plugin(findOrCreate);  //to work with findOrCreate mongoose plugin
 
 // -----------------------------SECRET KEY FOR ENCRYPTION ---------------------------------//
 
@@ -79,10 +85,61 @@ const User = mongoose.model('User', userSchema);
 
 passport.use(User.createStrategy());  //PASSPORT-LOCAL IS STRATEGY TO AUTHENTICATE BY MECHANISM
 
-// ------------------------------TO MAINTAIN LOGIN-SESSION------------------------------//
+// ------------------------------TO MAINTAIN LOGIN-SESSION from passport-local-mongoose package ------------------------------//
+//  ONLY FOR LOCAL AUTHENTICATION
+// passport.serializeUser(User.serializeUser());
+// passport.deserializeUser(User.deserializeUser());
 
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+// ------------------------------TO MAINTAIN LOGIN-SESSION used for all strategy to serialize and deserialize ------------------------------//
+//  ALL TYPE OF AUTHENTICATION COPIED FROM PASSPORT/SESSION
+passport.serializeUser(function(user, cb) {
+    process.nextTick(function() {
+      return cb(null, {
+        id: user.id,
+        username: user.username,
+        picture: user.picture
+      });
+    });
+  });
+  
+  passport.deserializeUser(function(user, cb) {
+    process.nextTick(function() {
+      return cb(null, user);
+    });
+  });
+
+// -----------------------------GOOGLE STRATEGY WITH PASSPORT TO USE IT---------------------------------//
+
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:5000/auth/google/secrets",
+    userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo", //passport to authenticate using oauth, we no longer retireving from google+ account but from user info
+},
+function(accessToken, refreshToken, profile, cb) {
+    console.log(profile);
+    // REFER : https://stackoverflow.com/questions/20431049/what-is-function-user-findorcreate-doing-and-when-is-it-called-in-passport
+    User.findOrCreate({ googleId: profile.id, username: profile.emails[0].value}, function (err, user) {  //findOrCreate - install mongoose plugin to work
+        return cb(err, user);
+    });
+}
+));
+
+// -----------------------------FACEBOOOK STRATEGY WITH PASSPORT TO USE IT---------------------------------//
+passport.use(new FacebookStrategy({
+    clientID: process.env.FACEBOOK_CLIENT_ID,
+    clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
+    callbackURL: 'http://localhost:5000/auth/facebook/secrets',
+    profileFields: ['id', 'emails', 'name'],
+  },
+      function(accessToken, refreshToken, profile, cb) {
+        console.log(profile);
+        User.findOrCreate({ facebookId: profile.id, username: profile.emails[0].value }, function (err, user) {
+          return cb(err, user);
+        });
+      }
+));
+
 
 // -----------------------------HOME ROUTE ---------------------------------//
 
@@ -90,7 +147,36 @@ app.get("/", function(req,res){
     res.render('home');
 });
 
-// ----------------------------- GET LOGIN ROUTE ---------------------------------//
+// ----------------------##############  GOOGLE AUTHENTICATION ROUTE  #################---------------------------------//
+// -----------------------------AUTH/GOOGLE ROUTE IN REGISTER ADN LOGIN PAGE---------------------------------//
+
+app.get('/auth/google',
+passport.authenticate('google', { scope: ['profile', 'email'] })); //authenticate with google strategy
+
+// -----------------------------AUTH/GOOGLE/CALLBACK ROUTE (AFTER AUTHENTICATED REDIRECTING TO THIS ROUTE) ---------------------------------//
+
+app.get('/auth/google/secrets', 
+passport.authenticate('google', { failureRedirect: '/login' }),
+function(req, res) {
+    // Successful authentication, redirect secrets page.
+    res.redirect('/secrets');
+});
+
+// ----------------------##############  FACEBOOK AUTHENTICATION ROUTE  #################---------------------------------//
+// -----------------------------AUTH/FACEBOOK ROUTE IN REGISTER ADN LOGIN PAGE---------------------------------//
+
+app.get('/auth/facebook', 
+passport.authenticate('facebook', {scope: [ 'email'] })); //authenticate with facebook strategy
+
+// -----------------------------AUTH/facebook/CALLBACK ROUTE (AFTER AUTHENTICATED REDIRECTING TO THIS ROUTE) ---------------------------------//
+
+app.get('/auth/facebook/secrets',
+  passport.authenticate('facebook', { failureRedirect: '/login', failureMessage: true }),
+  function(req, res) {
+    res.redirect('/secrets');
+  });
+
+  // ----------------------------- GET LOGIN ROUTE ---------------------------------//
 
 app.get("/login", function(req,res){
     res.render('login');
